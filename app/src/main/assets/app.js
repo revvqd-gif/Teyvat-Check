@@ -34,6 +34,20 @@ function writeCache(key, body) { CACHE.set(key, { ts: Date.now(), body }); }
 
 function getCookie() { return window.CookieBridge?.getCookie() || ''; }
 
+function getCookie() {
+  const raw = window.CookieBridge?.getCookie() || '';
+  if (raw.includes('\t') || raw.includes('#HttpOnly')) {
+    const lines = raw.split('\n').filter(l => l && !l.startsWith('#'));
+    const pairs = [];
+    for (const line of lines) {
+      const parts = line.split('\t');
+      if (parts.length >= 7) pairs.push(`${parts[5]}=${parts[6]}`);
+    }
+    return pairs.join('; ');
+  }
+  return raw;
+}
+
 function buildHeaders(cookie) {
   return {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
