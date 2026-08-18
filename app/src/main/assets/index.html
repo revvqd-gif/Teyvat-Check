@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teyvat Map — Uncollected Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a212b;
+    --panel2: #222b37;
+    --text: #e8edf2;
+    --muted: #8b98a5;
+    --accent: #4fc3f7;
+    --border: #2e3945;
+    --green: #66bb6a;
+    --red: #ef5350;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    overflow: hidden;
+  }
+  #map { flex: 1; height: 100%; background: #0b0f14; }
+
+  /* ---- Sidebar ---- */
+  #sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    z-index: 1000;
+  }
+  header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel2);
+  }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.3px; }
+  header p { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  section h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* Cookie box */
+  #cookie-form { display: flex; flex-direction: column; gap: 8px; }
+  #cookie-input {
+    width: 100%;
+    height: 72px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 11px;
+    resize: none;
+    font-family: ui-monospace, monospace;
+  }
+  #cookie-input:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  button {
+    background: var(--accent);
+    color: #0a1620;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  #cookie-status { font-size: 12px; }
+  #cookie-status.ok { color: var(--green); }
+  #cookie-status.err { color: var(--red); }
+
+  /* Toggle row */
+  .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .toggle-row label { font-size: 13px; }
+  .switch { position: relative; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0;
+    background: var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: 0.2s;
+  }
+  .slider::before {
+    content: "";
+    position: absolute; width: 14px; height: 14px;
+    left: 3px; top: 3px;
+    background: white; border-radius: 50%;
+    transition: 0.2s;
+  }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
+
+  /* Filters */
+  .filter-scroll { overflow-y: auto; flex: 1; }
+  .cat { margin-bottom: 6px; }
+  .cat-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+  }
+  .cat-head:hover { background: var(--panel2); }
+  .cat-head img { width: 18px; height: 18px; border-radius: 4px; }
+  .cat-head .count { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 400; }
+  .cat-children { padding-left: 26px; }
+  .cat-child {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 8px; border-radius: 6px;
+    cursor: pointer; font-size: 12.5px; color: var(--muted);
+  }
+  .cat-child:hover { background: var(--panel2); color: var(--text); }
+  .cat-child input { accent-color: var(--accent); }
+  .cat-child .count { margin-left: auto; font-size: 11px; }
+
+  footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+  #stats .num { color: var(--accent); font-weight: 700; }
+
+  /* Legend / loading */
+  #loading {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: var(--panel2); border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 20px; font-size: 13px;
+    z-index: 1001; display: none;
+  }
+  @media (max-width: 720px) {
+    body { flex-direction: column-reverse; }
+    #sidebar { width: 100%; min-width: 0; height: 38vh; border-right: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <header>
+    <h1>Teyvat Map</h1>
+    <p>Uncollected tracker — sinks with your HoYoLAB account</p>
+  </header>
+
+  <section>
+    <h2>Account Sync</h2>
+    <div id="cookie-form">
+      <textarea id="cookie-input" placeholder="Paste HoYoLAB cookie here..."></textarea>
+      <div class="row">
+        <button id="cookie-save">Save Cookie</button>
+        <button id="cookie-clear" class="ghost">Clear</button>
+        <span id="cookie-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="toggle-row">
+      <label for="only-uncollected">Only show uncollected</label>
+      <span class="switch"><input type="checkbox" id="only-uncollected" checked><span class="slider"></span></span>
+    </div>
+    <div class="toggle-row">
+      <label for="show-zone">Show region borders</label>
+      <span class="switch"><input type="checkbox" id="show-zone" checked><span class="slider"></span></span>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;flex:1;min-height:0;">
+    <h2>Categories</h2>
+    <div class="filter-scroll" id="filter-list"></div>
+  </section>
+
+  <footer>
+    <span id="stats">Loading…</span>
+    <span id="sync-state"></span>
+  </footer>
+</div>
+
+<div id="map"></div>
+<div id="loading">Loading points…</div>
+
+<script src="app.js"></script>
+</body>
+</html>

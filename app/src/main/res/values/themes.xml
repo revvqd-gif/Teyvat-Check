@@ -1,0 +1,15 @@
+<resources>
+    <style name="Theme.TeyvatMap" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">#4FC3F7</item>
+        <item name="colorPrimaryVariant">#29B6F6</item>
+        <item name="colorOnPrimary">#0A1620</item>
+        <item name="colorSecondary">#4FC3F7</item>
+        <item name="colorOnSecondary">#0A1620</item>
+        <item name="android:windowBackground">#0F1419</item>
+    </style>
+
+    <style name="Theme.TeyvatMap.NoActionBar" parent="Theme.TeyvatMap">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+</resources>
