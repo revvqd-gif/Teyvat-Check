@@ -70,8 +70,9 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
-            public void onConsoleMessage(android.webkit.ConsoleMessage consoleMessage) {
+            public boolean onConsoleMessage(android.webkit.ConsoleMessage consoleMessage) {
                 Log.d("TeyvatMap-JS", consoleMessage.message() + " (" + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber() + ")");
+                return true;
             }
         });
 
