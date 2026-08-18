@@ -3,7 +3,7 @@ const API_STATIC = 'https://sg-public-api-static.hoyolab.com/common/map_user/ys_
 const API_NO_CDN = 'https://sg-public-api.hoyolab.com/common/map_user/ys_obc';
 const MAP_ID = 2;
 const DEFAULT_LABELS = [13, 186, 4, 10, 11, 232, 51, 52];
-const MAX_MARKERS = 1500;
+const MAX_MARKERS = 2000;
 
 const state = {
   mapInfo: null, labels: null, labelIcons: new Map(), areas: null,
@@ -12,9 +12,7 @@ const state = {
   hasCookie: false, onlyUncollected: true, showZones: true,
 };
 
-const map = L.map('map', {
-  crs: L.CRS.Simple, minZoom: -5, maxZoom: 4, zoomControl: true, attributionControl: false,
-});
+const map = L.map('map', { crs: L.CRS.Simple, minZoom: -5, maxZoom: 4, zoomControl: true, attributionControl: false });
 
 const els = {
   filterList: document.getElementById('filter-list'),
@@ -31,22 +29,24 @@ const CACHE = new Map();
 const CACHE_TTL = { static: 24*3600e3, points: 3600e3 };
 
 function cacheKey(url) { return url; }
-function readCache(key, ttl) {
-  const e = CACHE.get(key);
-  if (!e || Date.now() - e.ts > ttl) return null;
-  return e.body;
-}
+function readCache(key, ttl) { const e = CACHE.get(key); if (!e || Date.now() - e.ts > ttl) return null; return e.body; }
 function writeCache(key, body) { CACHE.set(key, { ts: Date.now(), body }); }
 
-async function hoyoFetch(url, { cookie, method = 'GET', body } = {}) {
-  const headers = {
+function getCookie() { return window.CookieBridge?.getCookie() || ''; }
+
+function buildHeaders(cookie) {
+  return {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Referer': 'https://act.hoyolab.com/ys/app/interactive-map/index.html',
     'Origin': 'https://act.hoyolab.com',
     'x-rpc-map_version': '4.5',
+    ...(cookie ? { 'Cookie': cookie } : {}),
   };
-  if (cookie) headers['Cookie'] = cookie;
+}
+
+async function hoyoFetch(url, { cookie, method = 'GET', body } = {}) {
+  const headers = buildHeaders(cookie);
   if (body) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const text = await res.text();
@@ -56,27 +56,30 @@ async function hoyoFetch(url, { cookie, method = 'GET', body } = {}) {
   return json.data;
 }
 
-function getCookie() {
-  return window.CookieBridge?.getCookie() || '';
-}
+function getCookie() { return window.CookieBridge?.getCookie() || ''; }
 
 async function fetchCached(url, ttl) {
-  const k = cacheKey(url);
-  const cached = readCache(k, ttl);
-  if (cached) return cached;
+  const k = url;
+  const cached = CACHE.get(k);
+  if (cached && Date.now() - cached.ts < ttl) return cached.body;
   const cookie = getCookie();
   const data = await hoyoFetch(url, { cookie });
-  writeCache(k, data);
+  CACHE.set(k, { ts: Date.now(), body: data });
   return data;
 }
 
+function log(msg) { console.log('[TeyvatMap]', msg); }
+
+// ---------------- init ----------------
 async function init() {
   try {
+    log('init start');
     const [info, labels, areas] = await Promise.all([
       fetchCached(`${API_STATIC}/v3/map/info?map_id=${MAP_ID}&app_sn=ys_obc&lang=en-us`, 24*3600e3),
       fetchCached(`${API_STATIC}/v1/map/label/tree?map_id=${MAP_ID}&app_sn=ys_obc&lang=en-us`, 24*3600e3),
       fetchCached(`${API_STATIC}/v1/map/get_area_pageLabel?map_id=${MAP_ID}&app_sn=ys_obc&lang=en-us`, 24*3600e3),
     ]);
+    log('static data loaded', { info: !!info.info, labels: !!labels.tree, areas: !!areas.list });
     if (!info.info || !labels.tree || !areas.list) throw new Error('bad init data');
     state.mapInfo = info.info;
     state.labels = labels.tree;
@@ -86,6 +89,7 @@ async function init() {
     const v2 = state.mapInfo.detail_v2;
     state.origin = v2.origin; state.totalSize = v2.total_size; state.mapVersion = v2.map_version;
     state.minZoom = v2.min_zoom; state.maxZoom = v2.max_zoom;
+    log('map config', { origin: state.origin, totalSize: state.totalSize, version: state.mapVersion, zoom: [state.minZoom, state.maxZoom] });
 
     setupTiles();
     buildFilters(state.labels);
@@ -95,7 +99,9 @@ async function init() {
     fitContent();
     updateCounts();
     refreshPoints();
+    log('init complete');
   } catch (e) {
+    log('init error:', e);
     document.body.insertAdjacentHTML('beforeend', `<pre style="position:fixed;bottom:0;left:0;z-index:9999;background:#300;color:#f88;padding:8px;font-size:11px">init error: ${e.stack || e}</pre>`);
   }
 }
@@ -108,6 +114,7 @@ function fitContent() {
   map.setView([-cy, cx], -2);
 }
 
+// ---------------- tiles ----------------
 function setupTiles() {
   const [w, h] = state.totalSize;
   const suffix = (z) => (z < 0 ? 'N' : 'P') + Math.abs(z);
@@ -118,9 +125,13 @@ function setupTiles() {
     maxZoom: 4, minZoom: -5, bounds, noWrap: true,
   });
   tileLayer.getTileUrl = (coords) => url(coords.x, coords.y, coords.z);
+  tileLayer.on('tileload', (e) => { log('tile loaded:', e.coords); });
+  tileLayer.on('tileerror', (e) => { log('tile error:', e.coords, e.tile.src); });
   tileLayer.addTo(map);
+  log('tile layer added');
 }
 
+// ---------------- labels / filters ----------------
 function collectLabelIcons(tree) {
   for (const cat of tree) {
     state.topLevelIds.push(cat.id);
@@ -129,6 +140,7 @@ function collectLabelIcons(tree) {
       if (child.icon) state.labelIcons.set(child.id, child.icon);
     }
   }
+  log('labels loaded', { topLevel: state.topLevelIds.length, icons: state.labelIcons.size });
 }
 
 function buildFilters(tree) {
@@ -160,6 +172,7 @@ function addChild(parent, child) {
   return label;
 }
 
+// ---------------- zones ----------------
 function setupZones() {
   for (const area of state.areas.list || []) {
     const b = L.latLngBounds(
@@ -170,17 +183,22 @@ function setupZones() {
       .bindTooltip(area.name, { sticky: true }).addTo(state.zoneLayer);
   }
   state.zoneLayer.addTo(map);
+  log('zones loaded', state.areas.list.length);
 }
 
+// ---------------- points ----------------
 async function refreshPoints() {
   if (!state.selectedLabels.size) { state.markers.clearLayers(); updateCounts(); return; }
   els.loading.style.display = 'block';
+  log('refreshPoints', { selected: state.selectedLabels.size });
   try {
     const labelIds = state.topLevelIds.join(',');
-    const data = await fetchCached(`${API_STATIC}/v3/map/point/list?map_id=${MAP_ID}&label_ids=${labelIds}&app_sn=ys_obc&lang=en-us`, 3600e3);
+    const url = `${API_STATIC}/v3/map/point/list?map_id=${MAP_ID}&label_ids=${labelIds}&app_sn=ys_obc&lang=en-us`;
+    const data = await fetchCached(url, 3600e3);
     state.points = data.point_list || [];
+    log('points loaded', { total: state.points.length, labels: new Set(state.points.map(p => p.label_id)).size });
     renderMarkers();
-  } catch (e) { els.loading.textContent = `Error: ${e.message}`; }
+  } catch (e) { log('refreshPoints error:', e); els.loading.textContent = `Error: ${e.message}`; }
   finally { els.loading.style.display = 'none'; }
 }
 
@@ -203,6 +221,7 @@ function renderMarkers() {
     mk.addTo(state.markers); shown++;
   }
   state.markers.addTo(map); state.shown = shown; updateCounts();
+  log('renderMarkers', { shown, total: state.points.length, marks: state.marks.size });
 }
 
 function updateCounts() {
@@ -211,25 +230,32 @@ function updateCounts() {
   els.stats.innerHTML = `Total: <span class="num">${total}</span> · Collected: <span class="num">${collected}</span> · Uncollected: <span class="num">${Math.max(0, total - collected)}</span>`;
 }
 
+// ---------------- account sync ----------------
 async function checkCookie() {
   const cookie = getCookie();
   state.hasCookie = !!cookie;
   els.cookieStatus.textContent = state.hasCookie ? 'Cookie saved ✓' : 'No cookie';
   els.cookieStatus.className = state.hasCookie ? 'ok' : '';
+  log('checkCookie', { hasCookie: state.hasCookie });
   if (state.hasCookie) await refreshMarks();
 }
 
 async function refreshMarks() {
   els.syncState.textContent = 'Syncing…';
+  log('refreshMarks start');
   try {
     const cookie = getCookie();
-    const data = await hoyoFetch(`${API_NO_CDN}/v1/map/point/mark_map_point_list?map_id=${MAP_ID}&app_sn=ys_obc&lang=en-us`, { cookie });
+    if (!cookie) throw new Error('no cookie');
+    const url = `${API_NO_CDN}/v1/map/point/mark_map_point_list?map_id=${MAP_ID}&app_sn=ys_obc&lang=en-us`;
+    const data = await hoyoFetch(url, { cookie });
     state.marks = new Set((data.point_list || []).map(m => m.point_id));
     els.syncState.textContent = `Synced: ${state.marks.size} marks`;
+    log('refreshMarks done', { marks: state.marks.size });
     renderMarkers();
-  } catch (e) { els.syncState.textContent = 'Sync failed'; }
+  } catch (e) { log('refreshMarks error:', e); els.syncState.textContent = 'Sync failed'; }
 }
 
+// ---------------- events ----------------
 function bindEvents() {
   els.cookieInput.value = getCookie() || '';
   document.getElementById('cookie-save').addEventListener('click', async () => {
@@ -246,6 +272,7 @@ function bindEvents() {
   els.onlyUncollected.addEventListener('change', (e) => { state.onlyUncollected = e.target.checked; renderMarkers(); });
   els.showZone.addEventListener('change', (e) => { e.target.checked ? state.zoneLayer.addTo(map) : map.removeLayer(state.zoneLayer); });
   map.on('moveend', renderMarkers); map.on('zoomend', renderMarkers);
+  log('events bound');
 }
 
 init();
