@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Teal background circle -->
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M54,0a54,54 0 1,0 0,108a54,54 0 1,0 0,-108z"/>
+    <!-- Simple map marker icon in white -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24c-16.57,0 -30,13.43 -30,30c0,22.09 30,36 30,36s30,-13.91 30,-36C84,37.43 70.57,24 54,24zM54,48c-6.63,0 -12,-5.37 -12,-12s5.37,-12 12,-12s12,5.37 12,12S60.63,48 54,48z"/>
+</vector>
